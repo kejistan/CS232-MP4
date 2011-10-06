@@ -188,7 +188,7 @@ interrupt_dispatch:
 			  and	$k0, $k0, 0x1000 # bonk interrupt
 			  bnez	$k0, bonk_interrupt
 			  # further interrupt handlers here
-			  b		interrput_done
+			  b		interrupt_done
 bonk_interrupt:
 			  lb	$k0, current_target($0)
 			  sw	$k0, 0xffff0070($0)
