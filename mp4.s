@@ -190,7 +190,7 @@ interrupt_dispatch:
 			  # further interrupt handlers here
 			  b		interrput_done
 bonk_interrupt:
-			  lw	$k0, current_target($0)
+			  lb	$k0, current_target($0)
 			  sw	$k0, 0xffff0070($0)
 			  lw	$a0, 0xffff0070($0) # target box x coordinate
 			  lw    $k0, 0xffff0020($0) # bot x coordinate
@@ -199,7 +199,7 @@ bonk_interrupt:
 			  # epic fail, we're hitting a block that isn't the target
 			  b		bonk_interrupt_done
 bonk_interrupt_mark_target:
-			  lw	$k0, current_target($0)
+			  lb	$k0, current_target($0)
 			  li	$a0, 1
 			  sb	$a0, block_status($k0) # mark target box as locked
 			  b		bonk_interrupt_done
