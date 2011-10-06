@@ -3,6 +3,7 @@
 # 0	indicates unlocked state, 1 indicates locked state
 block_status: .byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 current_target: .byte 0
+exception_string: .asciiz "Exception\n"
 
 
 .text
@@ -210,3 +211,8 @@ interrupt_done:
 			  .set	at
 			  rfe
 			  jr	$k0
+non_interrupt:
+			  li	$v0, 4
+			  lw	$a0, exception_string
+			  syscall
+			  b		interrupt_done
