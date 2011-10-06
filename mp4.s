@@ -71,7 +71,7 @@ find_closest_block_loop:
 			  move	$s7, $v0		# save the new min_dist
 			  move	$s1, $s5		# save the new target_x
 			  move	$s2, $s6		# save the new target_y
-			  sw	$s0, current_target($0)
+			  sb	$s0, current_target($0)
 find_closest_block_loop_end:
 			  add	$s0, $s0, 1
 			  j		find_closest_block_loop
