@@ -3,6 +3,7 @@
 # 0	indicates unlocked state, 1 indicates locked state
 block_status: .byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 current_target: .byte 0
+reg0:		  .word	0
 exception_string: .asciiz "Exception\n"
 
 
@@ -177,6 +178,7 @@ interrupt_handler:
 			  .set	noat
 			  move	$k1, $at		# save $at
 			  .set	at
+			  sw	$a0, reg0($0)	# save $a0 for use in handler
 			  mfc0	$k0, $13		# cause register
 			  and	$k0, $k0, 0x3c	# ExcCode field
 			  bnez	$k0, non_interrupt
@@ -190,21 +192,22 @@ interrupt_dispatch:
 bonk_interrupt:
 			  lw	$k0, current_target($0)
 			  sw	$k0, 0xffff0070($0)
-			  lw	$k2, 0xffff0070($0) # target box x coordinate
+			  lw	$a0, 0xffff0070($0) # target box x coordinate
 			  lw    $k0, 0xffff0020($0) # bot x coordinate
-			  sub	$k2, $k0, $k2
-			  beqz	$k2, bonk_interrupt_mark_target	# assumes we're hitting the target
+			  sub	$a0, $k0, $a0
+			  beqz	$a0, bonk_interrupt_mark_target	# assumes we're hitting the target
 			  # epic fail, we're hitting a block that isn't the target
 			  b		bonk_interrupt_done
 bonk_interrupt_mark_target:
 			  lw	$k0, current_target($0)
-			  li	$k2, 1
-			  sw	$k2, block_status($k0) # mark target box as locked
+			  li	$a0, 1
+			  sw	$a0, block_status($k0) # mark target box as locked
 			  b		bonk_interrupt_done
 bonk_interrupt_done:
 			  sw	$0, 0xffff0060($0) # acknowledge bonk interrupt
 			  b		interrupt_dispatch # check for further interrupts
 interrupt_done:
+			  lw	$a0, reg0($0)	# restore $a0
 			  mfc0	$k0, $14
 			  .set	noat
 			  move	$at, $k1
