@@ -1,10 +1,16 @@
-## you get to write this one from scratch.
-## we'll only be testing its behavior, not poking your code directly
+.data
+# flags for information about blocks
+# 0	indicates unlocked state, 1 indicates locked state
+block_status: .byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+current_target: .byte 0
+
 
 .text
 main:
 			  sub	$sp, $sp, 8
 			  sw	$ra, 0($sp)
+			  li	$t4, 0x1001		# bonk interrupt and global interrupt
+			  mtc0	$t4, $12		# enable interrupt mask
 live:
 			  jal	find_closest_block
 			  sub	$t0, $v0, 300
@@ -50,6 +56,9 @@ find_closest_block_loop:
 			  move	$a0, $s5
 			  jal	is_in_goal
 			  bnez	$v0, find_closest_block_loop_end # is_in_goal(i)
+			  move	$a0, $s0
+			  jal	is_locked
+			  bnez	$v0, find_closest_block_loop_end # is_locked(i)
 			  move	$a0, $s5		# box_x
 			  move	$a1, $s6		# box_y
 			  move	$a2, $s3		# bot_x
@@ -60,6 +69,7 @@ find_closest_block_loop:
 			  move	$s7, $v0		# save the new min_dist
 			  move	$s1, $s5		# save the new target_x
 			  move	$s2, $s6		# save the new target_y
+			  sw	$s0, current_target($0)
 find_closest_block_loop_end:
 			  add	$s0, $s0, 1
 			  j		find_closest_block_loop
@@ -77,9 +87,10 @@ find_closest_block_return:
 			  lw	$ra, 0($sp)
 			  jr	$ra
 
-#
-# XXX Fix to not require pushing to far edge
-#
+is_locked:
+			  lw	$v0, block_status($a0)
+			  jr	$ra
+
 is_in_goal:
 			  li	$v0, 0			# initialize to false
 			  sub	$a0, $a0, 145
@@ -159,3 +170,43 @@ distance:
 			  mul	$t1, $t1, $t1	# y_diff ^ 2
 			  add	$v0, $t0, $t1
 			  jr	$ra
+
+.ktext 0x80000080
+interrupt_handler:
+			  .set	noat
+			  move	$k1, $at		# save $at
+			  .set	at
+			  mfc0	$k0, $13		# cause register
+			  and	$k0, $k0, 0x3c	# ExcCode field
+			  bnez	$k0, non_interrupt
+interrupt_dispatch:
+			  mfc0	$k0, $13		# cause register
+			  beqz	$k0, interrupt_done
+			  and	$k0, $k0, 0x1000 # bonk interrupt
+			  bnez	$k0, bonk_interrupt
+			  # further interrupt handlers here
+			  b		interrput_done
+bonk_interrupt:
+			  lw	$k0, current_target($0)
+			  sw	$k0, 0xffff0070($0)
+			  lw	$k2, 0xffff0070($0) # target box x coordinate
+			  lw    $k0, 0xffff0020($0) # bot x coordinate
+			  sub	$k2, $k0, $k2
+			  beqz	$k2, bonk_interrupt_mark_target	# assumes we're hitting the target
+			  # epic fail, we're hitting a block that isn't the target
+			  b		bonk_interrupt_done
+bonk_interrupt_mark_target:
+			  lw	$k0, current_target($0)
+			  li	$k2, 1
+			  sw	$k2, block_status($k0) # mark target box as locked
+			  b		bonk_interrupt_done
+bonk_interrupt_done:
+			  sw	$0, 0xffff0060($0) # acknowledge bonk interrupt
+			  b		interrupt_dispatch # check for further interrupts
+interrupt_done:
+			  mfc0	$k0, $14
+			  .set	noat
+			  move	$at, $k1
+			  .set	at
+			  rfe
+			  jr	$k0
