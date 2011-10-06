@@ -90,7 +90,7 @@ find_closest_block_return:
 			  jr	$ra
 
 is_locked:
-			  lw	$v0, block_status($a0)
+			  lb	$v0, block_status($a0)
 			  jr	$ra
 
 is_in_goal:
@@ -201,7 +201,7 @@ bonk_interrupt:
 bonk_interrupt_mark_target:
 			  lw	$k0, current_target($0)
 			  li	$a0, 1
-			  sw	$a0, block_status($k0) # mark target box as locked
+			  sb	$a0, block_status($k0) # mark target box as locked
 			  b		bonk_interrupt_done
 bonk_interrupt_done:
 			  sw	$0, 0xffff0060($0) # acknowledge bonk interrupt
