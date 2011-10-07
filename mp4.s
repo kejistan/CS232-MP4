@@ -3,8 +3,11 @@
 # 0	indicates unlocked state, 1 indicates locked state
 block_status: .byte	0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 current_target: .byte 0
+current_direction: .word 0
 reg0:		  .word	0
+ret:		  .word	0
 exception_string: .asciiz "Exception\n"
+fail_string:  .asciiz "Fail: Bonk without being aligned with target box\n"
 
 
 .text
@@ -119,14 +122,14 @@ move_block_to_goal:
 			  j		move_block_to_goal_left
 move_block_to_goal_right:
 			  add	$t2, $t1, 15
-			  bltz	$t2, move_block_to_goal_right_clear
+			  bltz	$t2, move_block_to_goal_right_move
 			  sub	$t2, $t1, 15
-			  bgtz	$t2, move_block_to_goal_right_clear
+			  bgtz	$t2, move_block_to_goal_right_move
 # we are too close to the block in y, avoid the block
 			  sub	$t2, $a1, 275
 			  bgtz	$t2, move_block_to_goal_down_move # the block is near the top
 			  j		move_block_to_goal_up_move
-move_block_to_goal_right_clear:
+move_block_to_goal_right_move:
 			  li	$t4, 0
 			  j		move_block_to_goal_return
 move_block_to_goal_down:
@@ -146,6 +149,7 @@ move_block_to_goal_left:
 			  j		move_block_to_goal_return
 move_block_to_goal_return:
 			  sw	$t4, 0xffff0014($0) # set angle
+			  sw	$t4, current_direction($0)
 			  li	$t4, 1
 			  sw	$t4, 0xffff0018($0) # set angle as absolute
 			  li	$t4, 10
@@ -188,24 +192,26 @@ interrupt_dispatch:
 			  and	$k0, $k0, 0x1000 # bonk interrupt
 			  bnez	$k0, bonk_interrupt
 			  # further interrupt handlers here
-			  b		interrupt_done
+			  j		interrupt_done
 bonk_interrupt:
+			  lw	$k0, current_direction($0)
+			  bne	$k0, 180, avoid_bonk # if we aren't headed left we haven't bonked on the target_block
 			  lb	$k0, current_target($0)
 			  sw	$k0, 0xffff0070($0)
 			  lw	$a0, 0xffff0070($0) # target box x coordinate
 			  lw    $k0, 0xffff0020($0) # bot x coordinate
+			  add	$a0, 10			# within 10 of box
 			  sub	$a0, $k0, $a0
-			  beqz	$a0, bonk_interrupt_mark_target	# assumes we're hitting the target
-			  # epic fail, we're hitting a block that isn't the target
-			  b		bonk_interrupt_done
+			  beqz	$a0, bonk_interrupt_mark_target	# we are close enough, and moving left to be hitting the target block
+			  j		avoid_bonk
 bonk_interrupt_mark_target:
 			  lb	$k0, current_target($0)
 			  li	$a0, 1
 			  sb	$a0, block_status($k0) # mark target box as locked
-			  b		bonk_interrupt_done
+			  j		bonk_interrupt_done
 bonk_interrupt_done:
 			  sw	$0, 0xffff0060($0) # acknowledge bonk interrupt
-			  b		interrupt_dispatch # check for further interrupts
+			  j		interrupt_dispatch # check for further interrupts
 interrupt_done:
 			  lw	$a0, reg0($0)	# restore $a0
 			  mfc0	$k0, $14
@@ -216,6 +222,63 @@ interrupt_done:
 			  jr	$k0
 non_interrupt:
 			  li	$v0, 4
-			  lw	$a0, exception_string
+			  lw	$a0, exception_string($0)
 			  syscall
-			  b		interrupt_done
+			  j		interrupt_done
+
+avoid_bonk:
+			  lw	$k0, current_direction($0)
+			  beq	$k0, 0, avoid_bonk_y
+			  beq	$k0, 180, avoid_bonk_y
+avoid_bonk_x:
+			  lw	$k0, 0xffff0020($0) # bot's x position
+			  lw	$a0, current_target($0) # target block
+			  sw	$a0, 0xffff0070
+			  lw	$a0, 0xffff0070	# block's x position
+			  sub	$k0, $a0, $k0
+			  bltz	$k0, avoid_bonk_left
+avoid_bonk_right:
+			  add	$a0, $a0, 10
+			  li	$k0, 0
+			  j		avoid_bonk_move_x
+avoid_bonk_left:
+			  sub	$a0, $a0, 10
+			  li	$k0, 180
+			  j		avoid_bonk_move_x
+avoid_bonk_move_x:
+# assumes angle is stored in $k0 and target x coordinate is in $a0
+			  sw	$k0, 0xffff0014($0)
+			  li	$k0, 1
+			  sw	$k0, 0xffff0018($0) # set angle
+			  li	$k0, 10
+			  sw	$k0, 0xffff0010($0) # set velocity
+avoid_bonk_move_x_until_a0:
+			  lw	$k0, 0xffff0020($0)	# bot's x position
+			  beq	$a0, $k0, bonk_interrupt_done
+			  j		avoid_bonk_move_x_until_a0
+avoid_bonk_y:
+			  lw	$k0, 0xffff0024($0) # bot's y position
+			  lw	$a0, current_target($0)	# target block
+			  sw	$a0, 0xffff0070($0)
+			  lw	$a0, 0xffff0074($0) # block's y position
+			  sub	$k0, $a0, $k0
+			  bltz	$k0, avoid_bonk_up
+avoid_bonk_down:
+			  add	$a0, $a0, 10
+			  li	$k0, 90
+			  j avoid_bonk_move_y
+avoid_bonk_up:
+			  sub	$a0, $a0, 10
+			  li	$k0, 270
+			  j		avoid_bonk_move_y
+avoid_bonk_move_y:
+# assumes angle is stored in $k0 and target x coordinate is in $a0
+			  sw	$k0, 0xffff0014($0)
+			  li	$k0, 1
+			  sw	$k0, 0xffff0018($0) # set angle
+			  li	$k0, 10
+			  sw	$k0, 0xffff0010($0) # set velocity
+avoid_bonk_move_y_until_a0:
+			  lw	$k0, 0xffff0024($0)	# bot's y position
+			  beq	$a0, $k0, bonk_interrupt_done
+			  j		avoid_bonk_move_y_until_a0
